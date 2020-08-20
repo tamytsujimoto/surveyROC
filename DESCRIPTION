@@ -1,0 +1,19 @@
+Package: surveyROC
+Type: Package
+Title: ROC curve for survey data
+Version: 0.1.0
+Authors@R: person("Tamy", "Tsujimoto", email = "tharumy@live.unc.edu", role = c("aut", "cre"))
+Description: A package to compute ROC curve for complex survey data. It includes 
+    non-parametric estimation of ROC curve, as well variance and confidence interval
+    computed from asymptotic results.
+Depends: tidyverse
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
+Imports:
+    tidyverse
+RoxygenNote: 7.1.1
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr

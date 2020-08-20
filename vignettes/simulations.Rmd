@@ -1,0 +1,147 @@
+---
+title: "Simulation Studies"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Simulation Studies}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This file aims to document the usage of the functions contained in the surveyROC package, as well as the simulation studies using ROC curve for complex survey data.
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7.5,
+  fig.height = 6
+)
+```
+
+```{r setup}
+library(surveyROC)
+```
+
+# Stratified Simple Random Sampling
+
+## Function Usage
+
+First, specify the parameters for the finite population:
+
+```{r param_pop}
+N = 100000
+p1 = .25
+
+param_pop <- 
+  data.frame(
+    strata = 1:10,
+    prob = c(.01, .02, .03, .04, .05, .10, .15, .2, .2, .2),
+    mu0 = rep(0, 10),
+    sigma0 = rep(1, 10),
+    mu1 = seq(5, .5, by = -.5),
+    sigma1 = rep(1, 10)
+  )
+
+```
+
+From the parameters specified above, we have the following ROC curves per strata, as well as the curve for the population:
+
+```{r roc_plots}
+
+# Binormal ROC curve per strata
+roc_strat <- binormal_roc_strat(seq(0,1,.01),
+                                freq_strata = param_pop$prob,
+                                mean0_strat = param_pop$mu0,
+                                mean1_strat = param_pop$mu1,
+                                sigma0_strat = param_pop$sigma0,
+                                sigma1_strat = param_pop$sigma1,
+                                by_strata = TRUE) 
+
+# Binormal ROC curve for population
+roc_pop <- binormal_roc_strat(seq(0,1,.01),
+                              freq_strata = param_pop$prob,
+                              mean0_strat = param_pop$mu0,
+                              mean1_strat = param_pop$mu1,
+                              sigma0_strat = param_pop$sigma0,
+                              sigma1_strat = param_pop$sigma1)
+
+# Plotting curves
+roc_strat %>% 
+  ggplot() +
+  geom_line(aes(x = x, y = roc, color = factor(strata))) +
+  geom_line(aes(x = x, y = roc), data = roc_pop)
+
+```
+
+We can generate a stratified population using the specified parameters by running:
+
+```{r gen_pop}
+
+pop <- generate_pop_strat(N = N,
+                          freq_strata = param_pop$prob,
+                          mean0_strat = param_pop$mu0,
+                          mean1_strat = param_pop$mu1,
+                          sigma0_strat = param_pop$sigma0,
+                          sigma1_strat = param_pop$sigma1,
+                          p1 = p1)
+
+glimpse(pop)
+```
+
+We can check the estimated ROC curve for the generated population:
+
+```{r }
+
+# Nesting population by strata
+pop_nest <-
+  pop %>%
+  group_by(strata) %>%
+  nest()
+
+# Estimating finite population ROC curve per strata 
+pop_nest$data %>%
+  map_dfr(estimate_survey_roc, .id = 'strata') %>% 
+  mutate(strata = as.numeric(strata)) %>% 
+  ggplot(aes(x = fpr, y = tpr, color = factor(strata))) +
+  geom_step()
+
+```
+
+To generate a sample, we run:
+
+```{r }
+
+# Stratified SRS
+sample <- 
+  pop %>% 
+  generate_srs_strat(sample_size = 1000)
+
+# Ploting ROC curve
+
+sample %>% 
+  estimate_survey_roc(var_weight = 'weight',
+                    ci = TRUE) %>% 
+  ggplot(aes(x = fpr)) +
+  geom_step(aes(y = tpr)) +
+  geom_step(aes(y = tp_ci_l)) +
+  geom_step(aes(y = tp_ci_u))+
+  geom_line(aes(x = x, y = roc), data = roc_pop, color = 'red')
+
+```
+
+## Simulation Studies
+
+```{r sim_functions}
+
+sim <-
+  simulate_strat(N_pop = 2,
+               pop_size = 100000,
+               param_pop = param_pop,
+               prop_disease = p1,
+               N_sample = 2,
+               sample_size = 1000,
+               grid = seq(0, 1, by=0.1))
+
+compute_sim_quant(sim, param_pop)
+
+```
