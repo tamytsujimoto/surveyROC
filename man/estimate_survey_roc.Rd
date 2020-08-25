@@ -4,14 +4,16 @@
 \alias{estimate_survey_roc}
 \title{Estimate ROC curve for complex survey data}
 \usage{
-estimate_survey_roc(data, grid = NULL, var_weight = NULL)
+estimate_survey_roc(data, grid = NULL, var_weight = NULL, ci = FALSE)
 }
 \arguments{
 \item{data}{data frame containing continuous marker X and class label D}
 
-\item{grid}{optional set of points for roc curve}
+\item{grid}{optional numeric vector of points for roc curve from 0 to 1}
 
 \item{var_weight}{string variable name for sampling weight. If specified, should be included in data}
+
+\item{ci}{Logical, if true, will calculate asymptotic confidence interval for the TPF}
 }
 \value{
 a dataframe containing
