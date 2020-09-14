@@ -44,6 +44,7 @@ compute_sim_quant <- function(sim, param_pop) {
               rel_bias_pop = mean(rel_bias_pop)*100,
               rel_bias_th = mean(rel_bias_th)*100,
               emp_sd_roc = sd(tpr),
+              asy_sd_roc = mean(tpr_sd),
               ci_cov_pop = mean(ci_cov_pop)*100,
               ci_cov_th = mean(ci_cov_th)*100)
 

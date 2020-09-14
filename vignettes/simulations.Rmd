@@ -129,37 +129,3 @@ sample %>%
 
 ```
 
-## Simulation Studies
-
-```{r sim}
-
-sim1 <-
-  simulate_strat(N_pop = 10,
-               pop_size = 100000,
-               param_pop = param_pop,
-               prop_disease = p1,
-               N_sample = 1000,
-               sample_size = 1000,
-               grid = seq(0, 1, by=0.1))
-
-sim2 <-
-  simulate_strat(N_pop = 2,
-               pop_size = 100000,
-               param_pop = param_pop,
-               prop_disease = p1,
-               N_sample = 2,
-               sample_size = 1000,
-               grid = seq(0, 1, by=0.1))
-
-sim3 <-
-  simulate_strat(N_pop = 2,
-               pop_size = 100000,
-               param_pop = param_pop,
-               prop_disease = p1,
-               N_sample = 2,
-               sample_size = 1000,
-               grid = seq(0, 1, by=0.1))
-
-compute_sim_quant(sim, param_pop)
-
-```

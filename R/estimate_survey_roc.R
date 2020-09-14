@@ -64,16 +64,13 @@ estimate_survey_roc <- function(data,
     # Estimating sampling fraction, mu_pi1 and p1
     p1 <- sum(D*wt)/sum(wt)
     sampling_frac <- n/sum(wt)
-
-    strata <- data$strata
-    prop_strata <- tapply(data$freq_strata, strata, unique)
-    wt_strata <- tapply(data$weight, strata, unique)
-    mu_pi1 <- sum(prop_strata*(wt_strata-1))
+    mu_pi1 <- estimate_mu_pi1(wt)
 
     # Computing asymptotic standard deviation and 95% CI
-    tp_sd = sqrt(sampling_frac*(1+mu_pi1))*((1-p1)^(-1/2)*(f1/f0)*sqrt(fp*(1-fp)) + p1^(-1/2)*sqrt(tp*(1-tp)))
-    tp_ci_l = tp - qnorm(.975)*tp_sd/sqrt(n)
-    tp_ci_u = tp + qnorm(.975)*tp_sd/sqrt(n)
+    tp_var = (sampling_frac*(1+mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
+    tp_sd = sqrt(tp_var/n)
+    tp_ci_l = tp - qnorm(.975)*tp_sd
+    tp_ci_u = tp + qnorm(.975)*tp_sd
 
     #
     df <- cbind(df,

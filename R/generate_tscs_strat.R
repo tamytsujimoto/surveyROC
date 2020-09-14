@@ -33,7 +33,7 @@ generate_tscs_strat <- function(population,
     slice_sample(n = n_ssu) %>%
     ungroup %>%
     left_join(N_psu_df, by = 'strata') %>%
-    mutate(wt = N_cluster*cluster_size/(n_psu*n_ssu)) # computing weights
+    mutate(weight = ifelse(cluster_size < n_ssu, N_cluster/n_psu, N_cluster*cluster_size/(n_psu*n_ssu))) # computing weights
 
   return(final_sample)
 
