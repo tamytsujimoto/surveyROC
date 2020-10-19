@@ -21,8 +21,16 @@ simulate_sample_strat <- function(pop,
                                   grid,
                                   var_weight = 'weight') {
 
-  as.list(rep(sample_size, N_sample)) %>%
-    map(generate_srs_strat, pop = pop) %>% # Generating stratified SR samples
-    map_dfr(estimate_survey_roc, grid = grid, var_weight = var_weight, ci = TRUE, .id = 'sample')
+  # Generating and stacking samples
+  sim <-
+    replicate(N_sample,
+              simulate_cum_sample_strat(pop = pop,
+                                        sample_size = sample_size,
+                                        grid = grid,
+                                        var_weight = var_weight),
+              simplify = FALSE) %>%
+    bind_rows(.id = 'sample')
+
+  return(sim)
 
 }

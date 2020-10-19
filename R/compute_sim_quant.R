@@ -37,15 +37,18 @@ compute_sim_quant <- function(sim, param_pop) {
     left_join(tpr_th, by = 'fpr') %>%
     mutate(rel_bias_pop = (tpr - tpr_pop)/tpr_pop,
            rel_bias_th = (tpr - tpr_th)/tpr_th,
-           ci_cov_pop = ifelse(tpr_pop >= tp_ci_l & tpr_pop <= tp_ci_u, 1, 0),
-           ci_cov_th = ifelse(tpr_th >= tp_ci_l & tpr_th <= tp_ci_u, 1, 0)) %>%
-    group_by(fpr) %>%
+           ci_cov_pop = ifelse(tpr_pop >= tp_ci_l_fin & tpr_pop <= tp_ci_u_fin, 1, 0),
+           ci_cov_th = ifelse(tpr_th >= tp_ci_l_sup & tpr_th <= tp_ci_u_sup, 1, 0)) %>%
+    group_by(scenario, fpr) %>%
     summarise(tpr_th = unique(tpr_th),
               rel_bias_pop = mean(rel_bias_pop)*100,
               rel_bias_th = mean(rel_bias_th)*100,
               emp_sd_roc = sd(tpr),
-              asy_sd_roc = mean(tpr_sd),
+              asy_sd_roc_sup = mean(tpr_sd_sup),
+              asy_sd_roc_fin = mean(tpr_sd_fin),
               ci_cov_pop = mean(ci_cov_pop)*100,
-              ci_cov_th = mean(ci_cov_th)*100)
+              ci_cov_th = mean(ci_cov_th)*100) %>%
+    pivot_wider(id_cols = c(scenario, fpr, tpr_th), names_from = scenario,
+                values_from = -c(scenario, fpr, tpr_th))
 
 }

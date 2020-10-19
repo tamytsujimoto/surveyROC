@@ -18,12 +18,10 @@ generate_tscs_strat <- function(population,
 
   # Sampling psu
   sample_psu <-
-    N_psu %>%
-    map(.f = function(x) seq(1:x)) %>% # creating index per strata
-    map(.f = function(x) data.frame(cluster_id = sample(x, size = n_psu))) %>% # sampling n_psu per strata
-    dplyr::bind_rows(.id = 'strata') %>% # aggregating in one dataframe
-    mutate(strata = as.numeric(strata),
-           cluster_id = as.numeric(cluster_id)) %>%
+    population %>%
+    group_by(strata) %>%
+    summarise(cluster_id = unique(cluster_id)) %>%
+    sample_n(size = n_psu) %>%
     left_join(population, by = c('strata', 'cluster_id')) # bringing information from selected clusters
 
   # Sampling SSU

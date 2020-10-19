@@ -66,11 +66,17 @@ estimate_survey_roc <- function(data,
     sampling_frac <- n/sum(wt)
     mu_pi1 <- estimate_mu_pi1(wt)
 
-    # Computing asymptotic standard deviation and 95% CI
-    tp_var = (sampling_frac*(1+mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
-    tp_sd = sqrt(tp_var/n)
-    tp_ci_l = tp - qnorm(.975)*tp_sd
-    tp_ci_u = tp + qnorm(.975)*tp_sd
+    # Computing asymptotic standard deviation and 95% CI superpop
+    tp_var_super = (sampling_frac*(1+mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
+    tp_var_finite = (sampling_frac*(mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
+
+    tp_sd_super = sqrt(tp_var_super/n)
+    tp_sd_finite = sqrt(tp_var_finite/n)
+
+    tp_ci_l_super = tp - qnorm(.975)*tp_sd_super
+    tp_ci_u_super = tp + qnorm(.975)*tp_sd_super
+    tp_ci_l_finite = tp - qnorm(.975)*tp_sd_finite
+    tp_ci_u_finite = tp + qnorm(.975)*tp_sd_finite
 
     #
     df <- cbind(df,
@@ -79,9 +85,13 @@ estimate_survey_roc <- function(data,
                   bandwidth0 = c(NA, dens0$bandwidth),
                   f1 = c(NA, f1),
                   bandwidth1 = c(NA, dens1$bandwidth),
-                  tpr_sd = c(0, tp_sd),
-                  tp_ci_l = c(0, tp_ci_l),
-                  tp_ci_u = c(0, tp_ci_u)))
+                  tpr_sd_sup = c(0, tp_sd_super),
+                  tpr_sd_fin = c(0, tp_sd_finite),
+                  tp_ci_l_sup = c(0, tp_ci_l_super),
+                  tp_ci_u_sup = c(0, tp_ci_u_super),
+                  tp_ci_l_fin = c(0, tp_ci_l_finite),
+                  tp_ci_u_fin = c(0, tp_ci_u_finite)
+                ))
   }
 
   return(df)
