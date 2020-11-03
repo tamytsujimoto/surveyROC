@@ -5,9 +5,8 @@
 #'
 #' @export
 
-rpois_min <- function(min, # minimum allowed for cluster size
-                      lambda # expected cluster size for poisson distr
-){
+rpois_min <- function(min, lambda){
+
   size <- 0
   while(size < min) size <- rpois(1, lambda)
   return(size)
@@ -22,7 +21,6 @@ rpois_min <- function(min, # minimum allowed for cluster size
 #' @param lambda numeric value for expected cluster size for poisson distr
 #'
 #' @export
-
 
 generate_clust_size <- function(n_cluster,
                                 min,
@@ -113,29 +111,32 @@ genenate_clust <- function(size_clus,
 #'
 #' @export
 
-generate_pop_clust <- function(cluster_sizes,
+generate_pop_clust <- function(N,
                                mean0,
                                mean1,
                                sigma0,
                                sigma1,
                                p1,
-                               corr_mvn = 0.5,
-                               tau = 1) {
+                               cluster_size,
+                               tau) {
 
-  pop_cluster <-
-    cluster_sizes %>%
-    purrr::map_dfr(.f = genenate_clust,
-                   corr_mvn = corr_mvn,
-                   mean0 = mean0,
-                   mean1 = mean1,
-                   sigma0 = sigma0,
-                   sigma1 = sigma1,
-                   p1 = p1,
-                   tau = tau,
-                   .id = "cluster_id")
+  # Number of clusters
+  N_cluster <- N/cluster_size
 
-  return(pop_cluster)
+  rep(1:N_cluster, N_cluster)
 
+  # Generating population
+  pop <- generate_pop(N, mean0, mean1, sigma0, sigma1, p1)
+
+  # Adding another layer of error
+  pop_clus <-
+    pop %>%
+    mutate(X = X + rnorm(N, sd = tau),
+           cluster_id = ntile(X, N_cluster))
+
+  # Creating clusters from quantiles of X
+
+  return(pop_clus)
 }
 
 #' Generate a stratified population of clustered observations
@@ -163,184 +164,57 @@ generate_pop_clust <- function(cluster_sizes,
 #'
 #' @export
 
-
-generate_pop_clust_strat <- function(cluster_size,
+generate_pop_clust_strat <- function(N,
+                                     freq_strata,
                                      mean0_strat,
                                      mean1_strat,
                                      sigma0_strat,
                                      sigma1_strat,
                                      p1,
-                                     corr_mvn = .5,
-                                     tau = 1) {
+                                     cluster_size,
+                                     tau) {
 
-  # Checking parameters
-  N_strata = length(cluster_size)
-  mu0 = as.list(mean0_strat)
-  mu1 = as.list(mean1_strat)
-  sigma0 = as.list(sigma0_strat)
-  sigma1 = as.list(sigma1_strat)
+  N_strata <- length(freq_strata)
+  size_strata <- ceiling(N*freq_strata)
 
-  # Creating dataframe
   pop <-
-    purrr::pmap_dfr(list(cluster_size,
-                         mu0,
-                         mu1,
-                         sigma0,
-                         sigma1),
-                    .f = generate_pop_clust,
-                    corr_mvn = corr_mvn,
-                    p1 = p1,
-                    tau = tau,
-                    .id = "strata") %>%
-    mutate(strata = as.numeric(strata),
-           cluster_id = as.numeric(cluster_id))
+    purrr::pmap_dfr(list(as.list(size_strata),
+                     as.list(mean0_strat),
+                     as.list(mean1_strat),
+                     as.list(sigma0_strat),
+                     as.list(sigma1_strat),
+                     replicate(N_strata, p1, simplify = FALSE),
+                     replicate(N_strata, cluster_size, simplify = FALSE),
+                     replicate(N_strata, tau, simplify = FALSE)), # List of parameters for each strata
+                .f = generate_pop_clust,
+                .id = 'strata') %>% # Generating population for each strata
+    mutate(strata = as.numeric(strata)) %>%
+    group_by(strata, cluster_id) %>%
+    mutate(cluster_size = n()) %>%
+    ungroup
+
 
   return(pop)
-}
 
-#' Simulation function for stratified Two Stage Cluster Sampling
-#'
-#' Generates stratified populations and draw stratified SRS from each population.
-#' Computes survey weighted ROC curve for each sample drawn form each of the genereated populations
-#'
-#' @param N_pop numeric value for number of stratified population to be generated
-#' @param N_psu numeric vector of number os psu's (clusters) per strata
-#' @param cluster_size_strat list of cluster sizes per strata
-#' @param param_pop data frame containing population parameters (prob, mu0, mu1, sigma0, sigma1)
-#' @param prop_disease numeric value for the proportion of diseased in population
-#' @param N_sample numeric value for number of samples to be drawn from each population
-#' @param sample_size_psu numeric value for number of psu selected per strata
-#' @param sample_size_ssu numeric value for number of ssu selected per selected psu
-#' @param grid numeric vector of points for roc curve from 0 to 1
-#'
-#' @return a dataframe containing containing survey weighted point and interval estimates for ROC curve for each
-#' sample drawn from each of the generated populations
-#'
-#' @export
-
-simulate_tscs_strat <- function(N_pop,
-                                N_psu,
-                                cluster_size_strat,
-                                param_pop,
-                                prop_disease,
-                                N_sample,
-                                sample_size_psu,
-                                sample_size_ssu,
-                                grid = seq(0, 1, by=0.1)){
-
-
-
-  # Generating N_pop populations
-  pop <-
-    replicate(N_pop,
-              generate_pop_clust_strat(cluster_size = cluster_size_strat,
-                                       mean0_strat = param_pop$mu0,
-                                       mean1_strat = param_pop$mu1,
-                                       sigma0_strat = param_pop$sigma0,
-                                       sigma1_strat = param_pop$sigma1,
-                                       p1 = prop_disease),
-              simplify = FALSE)
-
-  # Computing finite population ROC
-  tpr_pop <-
-    pop %>%
-    map_dfr(estimate_survey_roc,
-            grid = grid,
-            .id = 'population') %>%
-    select(population, fpr, tpr_pop = tpr)
-
-  # For each population, generating N_sample samples and computing ROC
-  sim <-
-    pop %>%
-    map_dfr(simulate_sample_tscs_strat,
-            N_psu = N_psu,
-            N_sample = N_sample,
-            sample_size_psu = sample_size_psu,
-            sample_size_ssu = sample_size_ssu,
-            grid = grid,
-            .id = 'population') %>%
-    left_join(tpr_pop, by = c('fpr', 'population'))
-
-  return(sim)
-
-}
-
-
-#' Title
-#'
-#' @param pop
-#' @param N_psu
-#' @param N_sample
-#' @param sample_size_psu
-#' @param sample_size_ssu
-#' @param grid
-#'
-#' @return
-#' @export
-#'
-#' @examples
-
-simulate_sample_tscs_strat <- function(pop,
-                                       N_psu,
-                                       N_sample,
-                                       sample_size_psu,
-                                       sample_size_ssu,
-                                       grid = NULL) {
-
-
-  # Generating and stacking samples
-  sim <-
-    replicate(N_sample,
-              simulate_cum_tscs_strat2(pop,
-                                       N_psu,
-                                       sample_size_psu,
-                                       sample_size_ssu,
-                                       grid = grid), simplify = FALSE) %>%
-    bind_rows(.id = 'sample')
-
-
-
-  return(sim)
-
-
-}
-
-
-#' Title
-#'
-#' @param id
-#' @param sample_stack
-#'
-#' @return
-#' @export
-#'
-#' @examples
-
-select_sample <- function(id, sample_stack){
-
-  sample <-
-    sample_stack %>%
-    filter(sample_id %in% id) %>%
-    select(strata, cluster_id, cluster_size, X, D, N_cluster, weight)
-
-  return(sample)
 }
 
 #' Generate a Stratified Two-Stage Cluster sampling
 #'
 #' @param population dataframe containing population
-#' @param N_psu numeric value for number of psu's per strata in the population
 #' @param n_psu numeric value for number of psu to be drawn from each strata
 #' @param n_ssu numeric value for number of ssu to be drawn from each psu
 #'
 #' @export
 
 generate_tscs_strat <- function(population,
-                                N_psu,
                                 n_psu,
                                 n_ssu){
+  # Number of strata
+  N_strata <- length(table(population$strata))
 
-  N_strata = length(table(population$strata))
+  # Number of PSU per strata
+  N_psu <- tapply(population$cluster_id, population$strata, max)
+
   N_psu_df = data.frame(strata = 1:N_strata,
                         N_cluster = N_psu)
 
@@ -366,8 +240,6 @@ generate_tscs_strat <- function(population,
 
 }
 
-
-
 #' Title
 #'
 #' @param pop
@@ -380,44 +252,44 @@ generate_tscs_strat <- function(population,
 #' @export
 #'
 #' @examples
-
-simulate_cum_tscs_strat <- function(pop,
-                                    N_psu,
-                                    sample_size_psu,
-                                    sample_size_ssu,
-                                    grid = NULL){
-
-
-  # Evaluating the number of necessary observations to be generated
-  psu_min <- min(sample_size_psu)
-  n_psu <- c(psu_min, diff(sample_size_psu))
-  n_scenario <- length(sample_size_psu)
-
-  # Generating and stacking samples
-  sample_stack <-
-    purrr::pmap_dfr(list(as.list(n_psu),
-                         as.list(sample_size_ssu)),
-                    .f = function(x,y) generate_tscs_strat(population = pop,
-                                                           N_psu = N_psu,
-                                                           n_psu = x,
-                                                           n_ssu = y),
-                    .id = 'sample_id') %>%
-    mutate(wt1 = N_cluster*cluster_size/(sample_size_psu[1]*sample_size_ssu[1]),
-           wt2 = N_cluster*cluster_size/(sample_size_psu[2]*sample_size_ssu[2]),
-           wt3 = N_cluster*cluster_size/(sample_size_psu[3]*sample_size_ssu[3]))
-
-  # Computing ROC for cumulative samples
-  roc_cum <-
-    as.list(seq(1,n_scenario)) %>%
-    map(.f = function(x) as.character(seq(1,x))) %>%
-    map(.f = select_sample, sample_stack = sample_stack) %>%
-    map_dfr(estimate_survey_roc, grid = grid, var_weight = 'weight', ci = TRUE, .id = 'scenario')
-
-
-  return(roc_cum)
-
-
-}
+#
+# simulate_cum_tscs_strat <- function(pop,
+#                                     N_psu,
+#                                     sample_size_psu,
+#                                     sample_size_ssu,
+#                                     grid = NULL){
+#
+#
+#   # Evaluating the number of necessary observations to be generated
+#   psu_min <- min(sample_size_psu)
+#   n_psu <- c(psu_min, diff(sample_size_psu))
+#   n_scenario <- length(sample_size_psu)
+#
+#   # Generating and stacking samples
+#   sample_stack <-
+#     purrr::pmap_dfr(list(as.list(n_psu),
+#                          as.list(sample_size_ssu)),
+#                     .f = function(x,y) generate_tscs_strat(population = pop,
+#                                                            N_psu = N_psu,
+#                                                            n_psu = x,
+#                                                            n_ssu = y),
+#                     .id = 'sample_id') %>%
+#     mutate(wt1 = N_cluster*cluster_size/(sample_size_psu[1]*sample_size_ssu[1]),
+#            wt2 = N_cluster*cluster_size/(sample_size_psu[2]*sample_size_ssu[2]),
+#            wt3 = N_cluster*cluster_size/(sample_size_psu[3]*sample_size_ssu[3]))
+#
+#   # Computing ROC for cumulative samples
+#   roc_cum <-
+#     as.list(seq(1,n_scenario)) %>%
+#     map(.f = function(x) as.character(seq(1,x))) %>%
+#     map(.f = select_sample, sample_stack = sample_stack) %>%
+#     map_dfr(estimate_survey_roc, grid = grid, var_weight = 'weight', ci = TRUE, .id = 'scenario')
+#
+#
+#   return(roc_cum)
+#
+#
+# }
 
 
 #' Title
@@ -435,7 +307,6 @@ simulate_cum_tscs_strat <- function(pop,
 
 # Second attempt
 simulate_cum_tscs_strat2 <- function(pop,
-                                     N_psu,
                                      sample_size_psu,
                                      sample_size_ssu,
                                      grid = NULL){
@@ -448,7 +319,6 @@ simulate_cum_tscs_strat2 <- function(pop,
 
   # Generating and stacking samples
   sample_max <- generate_tscs_strat(population = pop,
-                                    N_psu = N_psu,
                                     n_psu = psu_max,
                                     n_ssu = ssu_max) %>%
     select(strata, cluster_id, cluster_size, X, D)
@@ -459,7 +329,6 @@ simulate_cum_tscs_strat2 <- function(pop,
     purrr::pmap_dfr(list(as.list(sample_size_psu),
                          as.list(sample_size_ssu)),
                     .f = function(x,y) generate_tscs_strat(population = sample_max,
-                                                           N_psu = N_psu,
                                                            n_psu = x,
                                                            n_ssu = y),
                     .id = 'sample_id')
@@ -477,6 +346,7 @@ simulate_cum_tscs_strat2 <- function(pop,
 
 }
 
+
 #' Title
 #'
 #' @param pop
@@ -489,23 +359,158 @@ simulate_cum_tscs_strat2 <- function(pop,
 #'
 #' @examples
 
-simulate_cum_sample_strat <- function(pop,
-                                      sample_size,
-                                      grid,
-                                      var_weight = 'weight') {
+# simulate_cum_sample_strat <- function(pop,
+#                                       sample_size,
+#                                       grid,
+#                                       var_weight = 'weight') {
+#
+#   # Generating and stacking samples
+#   sample_stack <-
+#     purrr::map(as.list(sample_size),
+#                .f = generate_srs_strat,
+#                pop_strat = pop)
+#
+#   # Computing ROC for cumulative samples
+#   roc_cum <-
+#     sample_stack %>%
+#     map_dfr(estimate_survey_roc, grid = grid, var_weight = 'weight', ci = TRUE, .id = 'scenario')
+#
+#   return(roc_cum)
+# }
+
+
+
+
+
+
+#' Title
+#'
+#' @param pop
+#' @param N_psu
+#' @param N_sample
+#' @param sample_size_psu
+#' @param sample_size_ssu
+#' @param grid
+#'
+#' @return
+#' @export
+#'
+#' @examples
+
+simulate_sample_tscs_strat <- function(pop,
+                                       N_sample,
+                                       sample_size_psu,
+                                       sample_size_ssu,
+                                       grid = NULL) {
+
 
   # Generating and stacking samples
-  sample_stack <-
-    purrr::map(as.list(sample_size),
-               .f = generate_srs_strat,
-               pop_strat = pop)
+  sim <-
+    replicate(N_sample,
+              simulate_cum_tscs_strat2(pop,
+                                       sample_size_psu,
+                                       sample_size_ssu,
+                                       grid = grid), simplify = FALSE) %>%
+    bind_rows(.id = 'sample')
 
-  # Computing ROC for cumulative samples
-  roc_cum <-
-    sample_stack %>%
-    map_dfr(estimate_survey_roc, grid = grid, var_weight = 'weight', ci = TRUE, .id = 'scenario')
 
-  return(roc_cum)
+
+  return(sim)
+
+
 }
+
+#' Simulation function for stratified Two Stage Cluster Sampling
+#'
+#' Generates stratified populations and draw stratified SRS from each population.
+#' Computes survey weighted ROC curve for each sample drawn form each of the genereated populations
+#'
+#' @param N_pop numeric value for number of stratified population to be generated
+#' @param N_psu numeric vector of number os psu's (clusters) per strata
+#' @param cluster_size_strat list of cluster sizes per strata
+#' @param param_pop data frame containing population parameters (prob, mu0, mu1, sigma0, sigma1)
+#' @param prop_disease numeric value for the proportion of diseased in population
+#' @param N_sample numeric value for number of samples to be drawn from each population
+#' @param sample_size_psu numeric value for number of psu selected per strata
+#' @param sample_size_ssu numeric value for number of ssu selected per selected psu
+#' @param grid numeric vector of points for roc curve from 0 to 1
+#'
+#' @return a dataframe containing containing survey weighted point and interval estimates for ROC curve for each
+#' sample drawn from each of the generated populations
+#'
+#' @export
+
+simulate_tscs_strat <- function(N_pop,
+                                param_pop,
+                                p1,
+                                cluster_size,
+                                tau = 1,
+                                N_sample,
+                                sample_size_psu,
+                                sample_size_ssu,
+                                grid = seq(0, 1, by=0.1)){
+
+
+  # Generating N_pop populations
+  pop <-
+    replicate(N_pop,
+              generate_pop_clust_strat(N = N,
+                                       freq_strata = param_pop$prob,
+                                       mean0_strat = param_pop$mu0,
+                                       mean1_strat = param_pop$mu1,
+                                       sigma0_strat = param_pop$sigma0,
+                                       sigma1_strat = param_pop$sigma1,
+                                       p1 = p1,
+                                       cluster_size = cluster_size,
+                                       tau = tau),
+              simplify = FALSE)
+
+  # Computing finite population ROC
+  tpr_pop <-
+    pop %>%
+    map_dfr(estimate_survey_roc,
+            grid = grid,
+            .id = 'population') %>%
+    select(population, fpr, tpr_pop = tpr)
+
+  # For each population, generating N_sample samples and computing ROC
+  sim <-
+    pop %>%
+    map_dfr(simulate_sample_tscs_strat,
+            N_sample = N_sample,
+            sample_size_psu = sample_size_psu,
+            sample_size_ssu = sample_size_ssu,
+            grid = grid,
+            .id = 'population') %>%
+    left_join(tpr_pop, by = c('fpr', 'population'))
+
+  return(sim)
+
+}
+
+#' Title
+#'
+#' @param id
+#' @param sample_stack
+#'
+#' @return
+#' @export
+#'
+#' @examples
+
+# select_sample <- function(id, sample_stack){
+#
+#   sample <-
+#     sample_stack %>%
+#     filter(sample_id %in% id) %>%
+#     select(strata, cluster_id, cluster_size, X, D, N_cluster, weight)
+#
+#   return(sample)
+# }
+
+
+
+
+
 
 

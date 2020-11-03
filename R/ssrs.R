@@ -77,9 +77,9 @@ generate_pop_strat <- function(N,
                      as.list(mean1_strat),
                      as.list(sigma0_strat),
                      as.list(sigma1_strat),
-                     replicate(N_strata, p1, simplify = FALSE)),
-                .f = generate_pop) %>%
-    dplyr::bind_rows(.id = 'strata')
+                     replicate(N_strata, p1, simplify = FALSE)), # List of parameters for each strata
+                .f = generate_pop) %>% # Generating population for each strata
+    dplyr::bind_rows(.id = 'strata') # Combining all results in df
 
   return(pop)
 }
@@ -103,8 +103,8 @@ generate_pop_strat <- function(N,
 
 generate_srs <- function(pop, sample_size){
 
-  pop_size <- dim(pop)[1]
-  weight <- pop_size/sample_size
+  pop_size <- dim(pop)[1] # Population size
+  weight <- pop_size/sample_size # Computing sampling weight for SRS
 
   sample <-
     pop %>%
@@ -172,7 +172,6 @@ generate_srs_strat <- function(pop_strat, sample_size){
 #' @return a dataframe containing containing survey weighted point and interval estimates for ROC curve for each
 #' sample drawn from the specified population
 #' @export
-
 
 simulate_sample_strat <- function(pop,
                                   N_sample,
