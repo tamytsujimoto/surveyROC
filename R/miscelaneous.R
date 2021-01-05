@@ -113,6 +113,33 @@ binormal_auc <- function(mean0, mean1, sigma0, sigma1){
 
 }
 
+
+#' Binormal likelihood ratio
+#'
+#' Compute the AUC for ROC curve based on  binormal model
+#'
+#' @param c numeric vector cutoff in real line
+#' @param mean0 numeric value of mean for class label 0 (healthy)
+#' @param mean1 numeric value of mean for class label 1 (diseased)
+#' @param sigma0 numeric value of standard deviation for class label 0 (healthy)
+#' @param sigma1 numeric value of standard deviation for class label 1 (diseased)
+#'
+#' @return a numeric vector with same dimension as x with the likelihood ratio for binormal ROC model
+#'
+#' @export
+
+
+binormal_lr <- function(c, mean0, mean1, sigma0, sigma1){
+
+  a <- (mean1-mean0)/sigma1
+  b <- sigma0/sigma1
+
+  lr <- b*exp(-0.5*(c-mean1)^2/sigma1^2 + 0.5*(c-mean0)^2/sigma0^2)
+
+  return(lr)
+
+}
+
 #' Simulation Results
 #'
 #' Function to compute relative bias, empirical standard deviation and coverage probability
