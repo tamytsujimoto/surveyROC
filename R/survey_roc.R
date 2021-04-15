@@ -24,7 +24,9 @@ estimate_density_x <- function(x, # point of interest
     # Computing bandwith
     N_hat <- sum(weight)
     n <- length(y)
-    b <- .79*(quantile(y, .75) - quantile(y, .25))*n^(-1/5)
+    range <- Hmisc::wtd.quantile(y, weights = weight, probs = .75) - Hmisc::wtd.quantile(y, weights = weight, probs = .25)
+
+    b <- .79*(range)*N_hat^(-1/5)
 
     f_hat <- sum(weight*dnorm((x-y)/b)/b)/N_hat
   } else{
@@ -42,6 +44,7 @@ estimate_density_x <- function(x, # point of interest
                     bandwidth = b))
 
 }
+
 
 #' Function to estimate survey weighted density
 #'
@@ -153,7 +156,7 @@ estimate_survey_roc <- function(data,
 
   if(!is.null(var_weight) & ci){
 
-    # Estimating densities
+    # # Estimating densities
     dens0 <- estimate_density(x = cutoffs, y = X[D == 0], weight = wt[D == 0])
     dens1 <- estimate_density(x = cutoffs, y = X[D == 1], weight = wt[D == 1])
     f0 <- dens0$f_hat
@@ -194,8 +197,6 @@ estimate_survey_roc <- function(data,
 
   return(df)
 }
-
-
 
 
 #' Funtion to compute and plot the survey roc

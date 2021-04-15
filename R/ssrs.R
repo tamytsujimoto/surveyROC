@@ -104,7 +104,7 @@ generate_pop_strat <- function(N,
 generate_srs <- function(pop, sample_size){
 
   pop_size <- dim(pop)[1] # Population size
-  weight <- pop_size/sample_size # Computing sampling weight for SRS
+  weight <- ifelse(sample_size > pop_size, 1, pop_size/sample_size) # Computing sampling weight for SRS
 
   sample <-
     pop %>%
@@ -156,6 +156,42 @@ generate_srs_strat <- function(pop_strat, sample_size){
     select(strata, strata_size = pop_size, freq_strata, weight, X, D)
 
   return(sample)
+}
+
+#' Title
+#'
+#' @param pop
+#' @param sample_size
+#' @param grid
+#' @param var_weight
+#'
+#' @return
+#' @export
+#'
+#' @examples
+
+
+simulate_cum_sample_strat <- function(pop,
+                                      sample_size,
+                                      grid,
+                                      var_weight) {
+
+  # Generating and stacking samples
+  sample_stack <-
+    purrr::map(as.list(sample_size),
+               .f = generate_srs_strat,
+               pop_strat = pop)
+
+  # Computing ROC for cumulative samples
+  roc_cum <-
+    sample_stack %>%
+    map_dfr(estimate_survey_roc,
+            grid = grid,
+            var_weight = 'weight',
+            ci = TRUE,
+            .id = 'scenario')
+
+  return(roc_cum)
 }
 
 #' Simulate stratified Simple Random Samples from a population

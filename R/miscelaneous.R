@@ -177,19 +177,23 @@ compute_sim_quant <- function(sim, param_pop) {
   # Merging theoretical ROC curve and computing quantities of interest
   sim %>%
     left_join(tpr_th, by = 'fpr') %>%
-    mutate(rel_bias_pop = (tpr - tpr_pop)/tpr_pop,
-           rel_bias_th = (tpr - tpr_th)/tpr_th,
-           ci_cov_pop = ifelse(tpr_pop >= tp_ci_l_fin & tpr_pop <= tp_ci_u_fin, 1, 0),
-           ci_cov_th = ifelse(tpr_th >= tp_ci_l_sup & tpr_th <= tp_ci_u_sup, 1, 0)) %>%
+    mutate(bias_fin = tpr - tpr_pop,
+           bias_sup = tpr - tpr_th,
+           rel_bias_fin = bias_fin/tpr_pop,
+           rel_bias_sup = bias_sup/tpr_th,
+           ci_cov_fin = ifelse(tpr_pop >= tp_ci_l_fin & tpr_pop <= tp_ci_u_fin, 1, 0),
+           ci_cov_sup = ifelse(tpr_th >= tp_ci_l_sup & tpr_th <= tp_ci_u_sup, 1, 0)) %>%
     group_by(scenario, fpr) %>%
     summarise(tpr_th = unique(tpr_th),
-              rel_bias_pop = mean(rel_bias_pop)*100,
-              rel_bias_th = mean(rel_bias_th)*100,
+              bias_fin = mean(bias_fin),
+              bias_sup = mean(bias_sup),
+              rel_bias_fin = mean(rel_bias_fin)*100,
+              rel_bias_sup = mean(rel_bias_sup)*100,
               emp_sd_roc = sd(tpr),
               asy_sd_roc_sup = mean(tpr_sd_sup),
               asy_sd_roc_fin = mean(tpr_sd_fin),
-              ci_cov_pop = mean(ci_cov_pop)*100,
-              ci_cov_th = mean(ci_cov_th)*100) %>%
+              ci_cov_fin = mean(ci_cov_fin)*100,
+              ci_cov_sup = mean(ci_cov_sup)*100) %>%
     pivot_wider(id_cols = c(scenario, fpr, tpr_th), names_from = scenario,
                 values_from = -c(scenario, fpr, tpr_th))
 
