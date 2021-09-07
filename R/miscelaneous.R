@@ -160,7 +160,89 @@ binormal_lr <- function(c, mean0, mean1, sigma0, sigma1){
 #' }
 #' @export
 
+# compute_sim_quant <- function(sim, param_pop) {
+#
+#   fpr <- unique(sim$fpr)
+#
+#   # Computing theoretical ROC curve for population
+#   tpr_th <-
+#     binormal_roc_strat(fpr,
+#                        freq_strata = param_pop$prob,
+#                        mean0_strat = param_pop$mu0,
+#                        mean1_strat = param_pop$mu1,
+#                        sigma0_strat = param_pop$sigma0,
+#                        sigma1_strat = param_pop$sigma1) %>%
+#     select(fpr = x, tpr_th = roc)
+#
+#   # Merging theoretical ROC curve and computing quantities of interest
+#   sim %>%
+#     left_join(tpr_th, by = 'fpr') %>%
+#     mutate(bias_fin = tpr - tpr_pop,
+#            bias_sup = tpr - tpr_th,
+#            rel_bias_fin = bias_fin/tpr_pop,
+#            rel_bias_sup = bias_sup/tpr_th,
+#            ci_cov_fin = ifelse(tpr_pop >= tp_ci_l_fin & tpr_pop <= tp_ci_u_fin, 1, 0),
+#            ci_cov_sup = ifelse(tpr_th >= tp_ci_l_sup & tpr_th <= tp_ci_u_sup, 1, 0)) %>%
+#     group_by(scenario, fpr) %>%
+#     summarise(tpr_th = unique(tpr_th),
+#               bias_fin = mean(bias_fin),
+#               bias_sup = mean(bias_sup),
+#               rel_bias_fin = mean(rel_bias_fin)*100,
+#               rel_bias_sup = mean(rel_bias_sup)*100,
+#               emp_sd_roc = sd(tpr),
+#               asy_sd_roc_sup = mean(tpr_sd_sup),
+#               asy_sd_roc_fin = mean(tpr_sd_fin),
+#               ci_cov_fin = mean(ci_cov_fin)*100,
+#               ci_cov_sup = mean(ci_cov_sup)*100) %>%
+#     pivot_wider(id_cols = c(scenario, fpr, tpr_th), names_from = scenario,
+#                 values_from = -c(scenario, fpr, tpr_th))
+#
+# }
+
 compute_sim_quant <- function(sim, param_pop) {
+
+  fpr <- as.numeric(as.character(unique(sim$grid)))
+
+  # Computing theoretical ROC curve for population
+  tpr_th <-
+    binormal_roc_strat(fpr,
+                       freq_strata = param_pop$prob,
+                       mean0_strat = param_pop$mu0,
+                       mean1_strat = param_pop$mu1,
+                       sigma0_strat = param_pop$sigma0,
+                       sigma1_strat = param_pop$sigma1) %>%
+    select(grid = x, tpr_th = roc)
+
+  # Merging theoretical ROC curve and computing quantities of interest
+  sim %>%
+    filter(complete.cases(.)) %>%
+    mutate(grid = as.numeric(as.character(grid))) %>%
+    left_join(tpr_th, by = 'grid') %>%
+    mutate(bias_fin = tpr - tpr_pop,
+           bias_sup = tpr - tpr_th,
+           rel_bias_fin = bias_fin/tpr_pop,
+           rel_bias_sup = bias_sup/tpr_th,
+           ci_cov_fin = ifelse(tpr_pop >= ci_ll_fin & tpr_pop <= ci_ul_fin, 1, 0),
+           ci_cov_sup = ifelse(tpr_th >= ci_ll_sup & tpr_th <= ci_ul_sup, 1, 0)) %>%
+    group_by(scenario, grid) %>%
+    summarise(tpr_th = unique(tpr_th),
+              bias_fin = mean(bias_fin),
+              bias_sup = mean(bias_sup),
+              rel_bias_fin = mean(rel_bias_fin)*100,
+              rel_bias_sup = mean(rel_bias_sup)*100,
+              emp_sd_roc = sd(tpr),
+              asy_sd_roc_sup = mean(sqrt(vsvy_sup)),
+              asy_sd_roc_fin = mean(sqrt(vsvy_fin)),
+              ci_cov_fin = mean(ci_cov_fin)*100,
+              ci_cov_sup = mean(ci_cov_sup)*100) %>%
+    mutate(fpr = grid) %>%
+    pivot_wider(id_cols = c(scenario, fpr, tpr_th), names_from = scenario,
+                values_from = -c(scenario, fpr, tpr_th, grid))
+
+}
+
+
+compute_emp_cp <- function(sim, param_pop) {
 
   fpr <- unique(sim$fpr)
 
@@ -172,30 +254,24 @@ compute_sim_quant <- function(sim, param_pop) {
                        mean1_strat = param_pop$mu1,
                        sigma0_strat = param_pop$sigma0,
                        sigma1_strat = param_pop$sigma1) %>%
-    select(fpr = x, tpr_th = roc)
+    select(grid = x, tpr_th = roc)
 
   # Merging theoretical ROC curve and computing quantities of interest
   sim %>%
-    left_join(tpr_th, by = 'fpr') %>%
-    mutate(bias_fin = tpr - tpr_pop,
-           bias_sup = tpr - tpr_th,
-           rel_bias_fin = bias_fin/tpr_pop,
-           rel_bias_sup = bias_sup/tpr_th,
-           ci_cov_fin = ifelse(tpr_pop >= tp_ci_l_fin & tpr_pop <= tp_ci_u_fin, 1, 0),
-           ci_cov_sup = ifelse(tpr_th >= tp_ci_l_sup & tpr_th <= tp_ci_u_sup, 1, 0)) %>%
-    group_by(scenario, fpr) %>%
-    summarise(tpr_th = unique(tpr_th),
-              bias_fin = mean(bias_fin),
-              bias_sup = mean(bias_sup),
-              rel_bias_fin = mean(rel_bias_fin)*100,
-              rel_bias_sup = mean(rel_bias_sup)*100,
-              emp_sd_roc = sd(tpr),
-              asy_sd_roc_sup = mean(tpr_sd_sup),
-              asy_sd_roc_fin = mean(tpr_sd_fin),
-              ci_cov_fin = mean(ci_cov_fin)*100,
-              ci_cov_sup = mean(ci_cov_sup)*100) %>%
-    pivot_wider(id_cols = c(scenario, fpr, tpr_th), names_from = scenario,
-                values_from = -c(scenario, fpr, tpr_th))
+    mutate(grid = as.numeric(as.character(grid))) %>%
+    left_join(tpr_th, by = 'grid') %>%
+    group_by(scenario, grid) %>%
+    mutate(emp_sd_roc = sd(tpr),
+           ci_cov_fin2 = ifelse(tpr_pop >= tpr - 1.96*emp_sd_roc & tpr_pop <= tpr + 1.96*emp_sd_roc, 1, 0),
+           ci_cov_sup2 = ifelse(tpr_th >= tpr - 1.96*emp_sd_roc & tpr_th <= tpr + 1.96*emp_sd_roc, 1, 0)) %>%
+    summarise(ci_cov_fin_emp = mean(ci_cov_fin2)*100,
+              ci_cov_sup_emp = mean(ci_cov_sup2)*100) %>%
+    pivot_wider(id_cols = c(scenario, grid), names_from = scenario,
+                values_from = c(ci_cov_fin_emp, ci_cov_sup_emp))
 
 }
+
+
+
+
 

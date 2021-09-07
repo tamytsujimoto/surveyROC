@@ -182,17 +182,20 @@ simulate_cum_sample_strat <- function(pop,
                .f = generate_srs_strat,
                pop_strat = pop)
 
-  # Computing ROC for cumulative samples
-  roc_cum <-
+  # Computing ROC for samples
+  roc <-
     sample_stack %>%
+    map(~svydesign(id =~1, strata =~strata, fpc = ~strata_size, weights =as.formula(paste0("~", var_weight)), data = .x)) %>%
     map_dfr(estimate_survey_roc,
             grid = grid,
-            var_weight = 'weight',
+            var_weight = var_weight,
             ci = TRUE,
             .id = 'scenario')
 
-  return(roc_cum)
+  return(roc)
 }
+
+
 
 #' Simulate stratified Simple Random Samples from a population
 #'
@@ -269,10 +272,11 @@ simulate_strat <- function(N_pop,
   # Computing finite population ROC
   tpr_pop <-
     pop %>%
+    map(~svydesign(id =~1, strata =~strata, weights =~1, data = .x)) %>%
     map_dfr(estimate_survey_roc,
             grid = grid,
             .id = 'population') %>%
-    select(population, fpr, tpr_pop = tpr)
+    select(population, grid, tpr_pop = tpr)
 
   # For each population, generating N_sample samples and computing ROC
   sim <-
@@ -282,7 +286,7 @@ simulate_strat <- function(N_pop,
             sample_size = sample_size,
             grid = grid,
             .id = 'population') %>%
-    left_join(tpr_pop, by = c('fpr', 'population'))
+    left_join(tpr_pop, by = c('grid', 'population'))
 
   return(sim)
 

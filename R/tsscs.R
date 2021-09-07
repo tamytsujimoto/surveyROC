@@ -191,6 +191,9 @@ generate_pop_clust_strat <- function(N,
     mutate(strata = as.numeric(strata)) %>%
     group_by(strata, cluster_id) %>%
     mutate(cluster_size = n()) %>%
+    ungroup %>%
+    group_by(strata) %>%
+    mutate(strata_size = n()) %>%
     ungroup
 
 
@@ -237,6 +240,7 @@ generate_tscs_strat <- function(population,
                            ifelse(N_cluster < n_psu & cluster_size >= n_ssu, cluster_size/n_ssu,
                                   ifelse(N_cluster >= n_psu & cluster_size < n_ssu, N_cluster/n_psu, N_cluster*cluster_size/(n_psu*n_ssu)))))
 
+
   return(final_sample)
 
 
@@ -257,51 +261,11 @@ generate_tscs_strat <- function(population,
 #' @examples
 
 # Second attempt
-# simulate_cum_tscs_strat2 <- function(pop,
-#                                      sample_size_psu,
-#                                      sample_size_ssu,
-#                                      grid = NULL){
-#
-#
-#   # Evaluating the number of necessary observations to be generated
-#   psu_max <- max(sample_size_psu)
-#   ssu_max <- max(sample_size_ssu)
-#   n_scenario <- length(sample_size_psu)
-#
-#   # Generating and stacking samples
-#   sample_max <- generate_tscs_strat(population = pop,
-#                                     n_psu = psu_max,
-#                                     n_ssu = ssu_max) %>%
-#     select(strata, cluster_id, cluster_size, X, D)
-#
-#   N_psu_max <- as.vector(table(sample_max$strata))
-#
-#   sample_stack <-
-#     purrr::pmap_dfr(list(as.list(sample_size_psu),
-#                          as.list(sample_size_ssu)),
-#                     .f = function(x,y) generate_tscs_strat(population = sample_max,
-#                                                            n_psu = x,
-#                                                            n_ssu = y),
-#                     .id = 'sample_id')
-#
-#
-#   # Computing ROC for cumulative samples
-#   roc_cum <-
-#     as.list(1:n_scenario) %>%
-#     map(.f = function(x) filter(sample_stack, sample_id %in% x)) %>%
-#     map_dfr(estimate_survey_roc, grid = grid, var_weight = 'weight', ci = TRUE, .id = 'scenario')
-#
-#
-#   return(roc_cum)
-#
-#
-# }
-
-# Second attempt
 simulate_cum_tscs_strat2 <- function(pop,
                                      sample_size_psu,
                                      sample_size_ssu,
-                                     grid = NULL){
+                                     grid = NULL,
+                                     var_weight){
 
   samples <-
     pmap(list(n_psu = as.list(sample_size_psu),
@@ -311,9 +275,10 @@ simulate_cum_tscs_strat2 <- function(pop,
 
   roc <-
     samples %>%
-    map_dfr(.f = estimate_survey_roc,
-            var_weight = 'weight',
+    map(~svydesign(id =~cluster_id, strata =~strata, weights =~weight, data = .x, fpc = ~strata_size, nest = TRUE)) %>%
+    map_dfr(estimate_survey_roc,
             grid = grid,
+            var_weight = 'weight',
             ci = TRUE,
             .id = 'scenario')
 
@@ -381,6 +346,55 @@ simulate_sample_tscs_strat <- function(pop,
 #'
 #' @export
 
+# simulate_tscs_strat <- function(N_pop,
+#                                 N,
+#                                 param_pop,
+#                                 p1,
+#                                 cluster_size_strat,
+#                                 tau = 1,
+#                                 N_sample,
+#                                 sample_size_psu,
+#                                 sample_size_ssu,
+#                                 grid = seq(0, 1, by=0.1)){
+#
+#
+#   # Generating N_pop populations
+#   pop <-
+#     replicate(N_pop,
+#               generate_pop_clust_strat(N = N,
+#                                        freq_strata = param_pop$prob,
+#                                        mean0_strat = param_pop$mu0,
+#                                        mean1_strat = param_pop$mu1,
+#                                        sigma0_strat = param_pop$sigma0,
+#                                        sigma1_strat = param_pop$sigma1,
+#                                        p1 = p1,
+#                                        cluster_size = cluster_size_strat,
+#                                        tau = tau),
+#               simplify = FALSE)
+#
+#   # Computing finite population ROC
+#   tpr_pop <-
+#     pop %>%
+#     map_dfr(estimate_survey_roc,
+#             grid = grid,
+#             .id = 'population') %>%
+#     select(population, fpr, tpr_pop = tpr)
+#
+#   # For each population, generating N_sample samples and computing ROC
+#   sim <-
+#     pop %>%
+#     map_dfr(simulate_sample_tscs_strat,
+#             N_sample = N_sample,
+#             sample_size_psu = sample_size_psu,
+#             sample_size_ssu = sample_size_ssu,
+#             grid = grid,
+#             .id = 'population') %>%
+#     left_join(tpr_pop, by = c('fpr', 'population'))
+#
+#   return(sim)
+#
+# }
+
 simulate_tscs_strat <- function(N_pop,
                                 N,
                                 param_pop,
@@ -410,10 +424,12 @@ simulate_tscs_strat <- function(N_pop,
   # Computing finite population ROC
   tpr_pop <-
     pop %>%
+    map(~svydesign(id =~1, strata =~strata, weights =~1, fpr =~strata_size, data = .x)) %>%
     map_dfr(estimate_survey_roc,
             grid = grid,
             .id = 'population') %>%
-    select(population, fpr, tpr_pop = tpr)
+    #select(population, fpr, tpr_pop = tpr)
+    select(population, grid, tpr_pop = tpr)
 
   # For each population, generating N_sample samples and computing ROC
   sim <-
@@ -424,7 +440,7 @@ simulate_tscs_strat <- function(N_pop,
             sample_size_ssu = sample_size_ssu,
             grid = grid,
             .id = 'population') %>%
-    left_join(tpr_pop, by = c('fpr', 'population'))
+    left_join(tpr_pop, by = c('grid', 'population'))
 
   return(sim)
 

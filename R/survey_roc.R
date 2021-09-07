@@ -117,12 +117,87 @@ estimate_mu_pi1 <- function(weight){
 #'
 #' @export
 
+fD1 <- function(t) {
+  f1 <- dnorm(t, param_pop$mu1[1], param_pop$sigma1[1])
+  f2 <- dnorm(t, param_pop$mu1[2], param_pop$sigma1[2])
+  f3 <- dnorm(t, param_pop$mu1[3], param_pop$sigma1[3])
+  f4 <- dnorm(t, param_pop$mu1[4], param_pop$sigma1[4])
+  f5 <- dnorm(t, param_pop$mu1[5], param_pop$sigma1[5])
 
-estimate_survey_roc <- function(data,
+  param_pop$prob[1]*f1 +
+    param_pop$prob[2]*f2 +
+    param_pop$prob[3]*f3 +
+    param_pop$prob[4]*f4 +
+    param_pop$prob[5]*f5
+}
+
+roc_var_svy <- function(roc_data,
+                        design,
+                        grid = NULL){
+
+  if(is.null(grid)) grid <- seq(0,1,.01)
+
+  roc_svy <-
+    roc_data %>%
+    mutate(grid = cut(fpr, c(-Inf,grid), include.lowest = TRUE, labels = grid)) %>%
+    group_by(grid) %>%
+    summarise(fpr = max(fpr),
+              tpr = max(tpr),
+              cutoff = min(cutoff))
+
+  cutoff <- roc_svy$cutoff
+  fp <- roc_svy$fpr
+  tp <- roc_svy$tpr
+
+  n <- dim(design$variables)[1]
+  wt <- 1/(design$prob)
+  mu_pi1 <- estimate_mu_pi1(wt)
+  p1 <- svymean(~D, design)[1]
+  sampling_frac <- n/sum(wt)
+
+  dsgnD1 <- subset(design, D == 1)
+  dsgnD0 <- subset(design, D == 0)
+
+  f0 =
+    svysmooth(~X, design = dsgnD0)$X %>%
+    as_tibble() %>%
+    mutate(aux = cut(x, c(-Inf,cutoff), include.lowest = TRUE)) %>%
+    group_by(aux) %>%
+    filter(row_number() == n()) %>%
+    select(aux, f0 = y)
+
+  f1 =
+    svysmooth(~X, design = dsgnD1)$X %>%
+    as_tibble() %>%
+    mutate(aux = cut(x, c(-Inf,cutoff), include.lowest = TRUE)) %>%
+    group_by(aux) %>%
+    filter(row_number() == n()) %>%
+    select(aux, f1 = y)
+
+  ratio <-
+    f1 %>%
+    full_join(f0, by = 'aux') %>%
+    mutate(ratio = f1/f0)
+
+  roc_svy <-
+    roc_svy %>%
+    mutate(aux = cut(cutoff, c(-Inf,cutoff), include.lowest = TRUE)) %>%
+    left_join(ratio, by = "aux") %>%
+    mutate(#ratio_true = fD1(cutoff)/dnorm(cutoff),
+      vsvy_sup = (1/n)*(sampling_frac*(1+mu_pi1))*((1-p1)^(-1)*ratio^2*fpr*(1-fpr) + p1^(-1)*tpr*(1-tpr)),
+      vsvy_fin = (1/n)*(sampling_frac*(mu_pi1))*((1-p1)^(-1)*ratio^2*fpr*(1-fpr) + p1^(-1)*tpr*(1-tpr))) %>%
+    select(-aux)
+
+  return(roc_svy)
+
+}
+
+estimate_survey_roc <- function(design,
                                 grid = NULL,
                                 var_weight = NULL,
                                 ci = FALSE) {
 
+  data <- design$variables
   D <- data$D
   X <- data$X
   X.order <- order(X, decreasing = TRUE)
@@ -140,62 +215,40 @@ estimate_survey_roc <- function(data,
   fp <- FPF[!dups]
   cutoffs <- TTT[!dups]
 
+  tp <- ifelse(tp > 1, 1, tp)
+  fp <- ifelse(fp > 1, 1, fp)
+
+  df_roc <-
+    data.frame(fpr = c(0,fp),
+                       tpr = c(0,tp),
+                       cutoff = c(Inf, cutoffs))
+
   # CONFIDENCE INTERVAL
 
-  if(!is.null(grid)){
+  if(ci) {
 
-    aux <- cut(fp, grid, include.lowest = TRUE)
-    tp <- as.vector(tapply(tp, aux, max))
-    fp <- grid[-1]
-    cutoffs <- as.vector(tapply(cutoffs, aux, min))
+    df_roc <-
+      roc_var_svy(df_roc, design, grid) %>%
+      mutate(ci_ll_sup = tpr - 1.96*sqrt(vsvy_sup),
+             ci_ul_sup = tpr + 1.96*sqrt(vsvy_sup),
+             ci_ll_fin = tpr - 1.96*sqrt(vsvy_fin),
+             ci_ul_fin = tpr + 1.96*sqrt(vsvy_fin))
+
   }
 
-  df <- data.frame(fpr = c(0,fp),
-                   tpr = c(0,tp),
-                   cutoff = c(Inf, cutoffs))
+  if(ci == FALSE & !is.null(grid)) {
 
-  if(!is.null(var_weight) & ci){
+    df_roc <-
+      df_roc %>%
+      mutate(grid = cut(fpr, c(-Inf,grid), include.lowest = TRUE, labels = grid)) %>%
+      group_by(grid) %>%
+      summarise(fpr = max(fpr),
+                tpr = max(tpr),
+                cutoff = min(cutoff))
 
-    # # Estimating densities
-    dens0 <- estimate_density(x = cutoffs, y = X[D == 0], weight = wt[D == 0])
-    dens1 <- estimate_density(x = cutoffs, y = X[D == 1], weight = wt[D == 1])
-    f0 <- dens0$f_hat
-    f1 <- dens1$f_hat
-
-    # Estimating sampling fraction, mu_pi1 and p1
-    p1 <- sum(D*wt)/sum(wt)
-    sampling_frac <- n/sum(wt)
-    mu_pi1 <- estimate_mu_pi1(wt)
-
-    # Computing asymptotic standard deviation and 95% CI superpop
-    tp_var_super = (sampling_frac*(1+mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
-    tp_var_finite = (sampling_frac*(mu_pi1))*((1-p1)^(-1)*(f1/f0)^2*fp*(1-fp) + p1^(-1)*tp*(1-tp))
-
-    tp_sd_super = sqrt(tp_var_super/n)
-    tp_sd_finite = sqrt(tp_var_finite/n)
-
-    tp_ci_l_super = tp - qnorm(.975)*tp_sd_super
-    tp_ci_u_super = tp + qnorm(.975)*tp_sd_super
-    tp_ci_l_finite = tp - qnorm(.975)*tp_sd_finite
-    tp_ci_u_finite = tp + qnorm(.975)*tp_sd_finite
-
-    #
-    df <- cbind(df,
-                data.frame(
-                  f0 = c(NA, f0),
-                  bandwidth0 = c(NA, dens0$bandwidth),
-                  f1 = c(NA, f1),
-                  bandwidth1 = c(NA, dens1$bandwidth),
-                  tpr_sd_sup = c(0, tp_sd_super),
-                  tpr_sd_fin = c(0, tp_sd_finite),
-                  tp_ci_l_sup = c(0, tp_ci_l_super),
-                  tp_ci_u_sup = c(0, tp_ci_u_super),
-                  tp_ci_l_fin = c(0, tp_ci_l_finite),
-                  tp_ci_u_fin = c(0, tp_ci_u_finite)
-                ))
   }
 
-  return(df)
+  return(df_roc)
 }
 
 
